@@ -1,0 +1,4 @@
+.theia
+*.bk
+*.backup
+.git-rewrite
