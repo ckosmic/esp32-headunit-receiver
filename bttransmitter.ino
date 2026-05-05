@@ -1,7 +1,7 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include "AudioTools.h"
-#include "BluetoothA2DPSink.h"
+#include "BluetoothA2DPSinkQueued.h"
 #include <time.h>
 #include <Wire.h>
 #include "driver/i2s_std.h"
@@ -23,7 +23,7 @@
 
 Button buttonCenter(BUTTON_CENTER);
 
-BluetoothA2DPSink a2dp_sink;
+BluetoothA2DPSinkQueued a2dp_sink;
 A2DPNoVolumeControl ad2p_volume_control;
 
 I2SStream i2s_out;
@@ -276,6 +276,30 @@ void send_prev_song() {
   send_json(doc);
 }
 
+void send_volume_up() {
+  JsonDocument doc;
+  doc["command"] = "volume_up";
+  send_json(doc);
+}
+
+void send_volume_down() {
+  JsonDocument doc;
+  doc["command"] = "volume_down";
+  send_json(doc);
+}
+
+void send_toggle_track_metadata() {
+  JsonDocument doc;
+  doc["command"] = "toggle_track_metadata";
+  send_json(doc);
+}
+
+void send_cycle_visualizer() {
+  JsonDocument doc;
+  doc["command"] = "cycle_visualizer";
+  send_json(doc);
+}
+
 void request_menu_state() {
   JsonDocument doc;
   doc["command"] = "request_menu_state";
@@ -363,6 +387,36 @@ void handle_comm_button(JsonDocument& doc) {
   }
 }
 
+void handle_swc_button(JsonDocument& doc) {
+  int buttonId = doc["value"].as<int>();
+  if (buttonId == 1) {
+    send_volume_up();
+  } else if (buttonId == 2) {
+    send_volume_down();
+  } else if (buttonId == 3) {
+    send_next_song();
+  } else if (buttonId == 4) {
+    send_prev_song();
+  } else if (buttonId == 5) {
+    send_cycle_visualizer();
+  } else if (buttonId == 6) {
+    if (playback_state == "playing") {
+      a2dp_sink.pause();
+    } else {
+      a2dp_sink.play();
+    }
+  } else if (buttonId == 7) {
+    send_toggle_track_metadata();
+  }
+}
+
+void handle_aux_detect(JsonDocument& doc) {
+  int auxDetectState = doc["value"].as<int>();
+  audio_source = auxDetectState;
+  delay(100);
+  ESP.restart();
+}
+
 
 
 
@@ -411,6 +465,10 @@ void process_message(JsonDocument& doc) {
       handle_set_audio_source(doc);
     } else if (command == "comm_button") {
       handle_comm_button(doc);
+    } else if (command == "comm_swc") {
+      handle_swc_button(doc);
+    } else if (command == "comm_aux_detect") {
+      handle_aux_detect(doc);
     } else {
       Serial.println("Unknown command: " + command);
     }
