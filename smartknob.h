@@ -15,6 +15,7 @@ private:
 
   void (*onPositionChanged)(int32_t position) = nullptr;
   void (*onAngleChanged)(float angle) = nullptr;
+  void (*onInit)() = nullptr;
 public:
   int min_position = 0;
   int max_position = -1;
@@ -43,6 +44,14 @@ public:
   }
   void setOnAngleChanged(void(*callback)(float)) {
     onAngleChanged = callback;
+  }
+  void setOnInit(void(*callback)()) {
+    onInit = callback;
+  }
+
+  void setPosition(int32_t position) {
+    current_position = position;
+    prev_position = position;
   }
 };
 

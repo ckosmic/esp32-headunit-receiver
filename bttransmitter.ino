@@ -94,6 +94,7 @@ int tzOffset = 0;
 int latest_position = 0;
 float latest_sub_position_unit = 0;
 float play_haptic_strength = 0;
+bool knob_ready = false;
 
 
 
@@ -249,6 +250,14 @@ void send_datetime() {
 }
 
 void send_knob_state() {
+  //Serial.print("Sending knob state: angle: ");
+  //Serial.print(motorPacket.angle);
+  //Serial.print(", position: ");
+  //Serial.print(motorPacket.position);
+  //Serial.print(", sub-pos: ");
+  //Serial.print(motorPacket.sub_position_unit);
+  //Serial.print(", direction: ");
+  //Serial.println(motorPacket.direction);
   send_packet(uart, 0x02, (uint8_t*)&motorPacket, sizeof(motorPacket));
   motorPacket.direction = 0;
 }
@@ -310,7 +319,7 @@ void request_motor_state() {
   JsonDocument doc;
   doc["command"] = "request_motor_state";
   send_json(doc);
-  knob.resetAngle(); 
+  //knob.resetAngle(); 
 }
 
 void handle_set_menu_state(JsonDocument& doc) {
@@ -351,8 +360,12 @@ void handle_motor_props_changed(JsonDocument& doc) {
       knob.resetAngle();
   }
   if (doc.containsKey("position")) {
-    knob.current_position = doc["position"].as<int32_t>();
+    int32_t newPosition = doc["position"].as<int32_t>();
+    knob.setPosition(newPosition);
+    motorPacket.position = newPosition;
   }
+
+  knob_ready = true;
 }
 
 void handle_set_eq(JsonDocument& doc) {
@@ -521,7 +534,7 @@ void receive_json(HardwareSerial& serial_object) {
 }
 
 void avrc_metadata_callback(uint8_t data1, const uint8_t *data2) {
-  Serial.printf("AVRC metadata rsp: attribute id 0x%x, %s\n", data1, data2);
+  //Serial.printf("AVRC metadata rsp: attribute id 0x%x, %s\n", data1, data2);
   char *end;
 
   String value_string = String((const char*)data2);
@@ -675,7 +688,9 @@ void on_knob_position_changed(int32_t position) {
   motorPacket.direction = position - latest_position;
   latest_position = position;
 
-  send_knob_state();
+  if (knob_ready) {
+    send_knob_state();
+  }
 }
 
 void on_knob_angle_changed(float angle) {
@@ -687,13 +702,20 @@ void on_knob_angle_changed(float angle) {
     latest_sub_position_unit = rounded_latest_sub_position_unit;
     motorPacket.sub_position_unit = latest_sub_position_unit;
 
-    send_knob_state();
+    if (knob_ready) {
+      send_knob_state();
+    }
   }
+}
+
+void on_knob_init() {
+  request_motor_state();
 }
 
 void knob_task_routine(void *pvParameters) {
   knob.setOnPositionChanged(on_knob_position_changed);
   knob.setOnAngleChanged(on_knob_angle_changed);
+  knob.setOnInit(on_knob_init);
   knob.init();
 
   vTaskDelay(pdMS_TO_TICKS(1000));
@@ -714,12 +736,7 @@ void write_data_stream(const uint8_t* data, uint32_t length) {
 
 void initialize_input(uint8_t mode) {
   if (mode == 0) {
-    //esp_bt_cod_t cod;
-    //cod.major = ESP_BT_COD_MAJOR_DEV_AV;
-    //cod.minor = 0b001000;
-    //cod.service = ESP_BT_COD_SRVC_AUDIO;
-    //if(esp_bt_gap_set_cod(cod, ESP_BT_INIT_COD) != ESP_OK)
-    //  Serial.println("Failed to set Bluetooth Class of Device.");
+    
 
     std::vector<esp_avrc_rn_event_ids_t> avrc_rn_events = {
       ESP_AVRC_RN_PLAY_STATUS_CHANGE, ESP_AVRC_RN_TRACK_CHANGE, 
@@ -747,9 +764,21 @@ void initialize_input(uint8_t mode) {
     a2dp_sink.set_peer_name_callback(peer_name_changed);
     a2dp_sink.set_volume_control(&ad2p_volume_control);
     a2dp_sink.set_task_core(0);
+    a2dp_sink.set_task_priority(configMAX_PRIORITIES - 1);
+    a2dp_sink.set_i2s_stack_size(3072);
+    a2dp_sink.set_i2s_ringbuffer_size(8 * 1024);
     
     a2dp_sink.set_stream_reader(write_data_stream, false);
     a2dp_sink.start("Christian's Car", true);
+
+    esp_bt_cod_t cod;
+    cod.major = ESP_BT_COD_MAJOR_DEV_AV;
+    cod.minor = 0x1C; //0b001000;
+    cod.service = ESP_BT_COD_SRVC_AUDIO;
+    if(esp_bt_gap_set_cod(cod, ESP_BT_INIT_COD) != ESP_OK)
+      Serial.println("Failed to set Bluetooth Class of Device.");
+    else
+      Serial.println("Successfully set Bluetooth Class of Device!");
 
     Serial.println("Initialized Bleutooth audio input");
   } else {
@@ -816,7 +845,6 @@ void setup() {
 
   buttonCenter.onAction(buttonHandler);
 
-  request_motor_state();
   send_datetime();
   send_audio_source();
 

@@ -39,6 +39,8 @@ static const float IDLE_CORRECTION_RATE_ALPHA = 0.0005;
 float idle_check_velocity_ewma = 0;
 uint32_t last_idle_start = 0;
 
+unsigned long init_time = 0;
+
 void SmartKnob::updateDetent() {
   // If we are not moving and we're close to the center (but not exactly there), slowly adjust the centerpoint to match the current position
   idle_check_velocity_ewma = motor.shaft_velocity * IDLE_VELOCITY_EWMA_ALPHA + idle_check_velocity_ewma * (1 - IDLE_VELOCITY_EWMA_ALPHA);
@@ -339,6 +341,8 @@ void SmartKnob::resetAngle() {
   angle_offset = sensor.getAngle();
   current_detent_center = motor.shaft_angle;
   current_position = 0;
+  //prev_shaft_angle = sensor.getAngle();
+  //prev_position = current_position;
 }
 
 
@@ -453,8 +457,11 @@ void SmartKnob::init() {
   //Serial.println(F("Set the target angle using serial terminal:"));
   //_delay(1000);
 
-  //(1000);
+  //delay(1000);
+  
   //calibrate();
+
+  init_time = millis();
 }
 
 void SmartKnob::update() {
@@ -463,23 +470,42 @@ void SmartKnob::update() {
   // the faster you run this function the better
   // Arduino UNO loop  ~1kHz
   // Bluepill loop ~10kHz
+  static bool initialized = false;
+
+  if (millis() < init_time + 2000) {
+    return;
+  } else {
+    if (!initialized) {
+      onInit();
+    }
+    initialized = true;
+  }
+
+  //if (!initialized) {
+  //  prev_position = current_position;
+  //  prev_shaft_angle = sensor.getAngle();
+  //  angle_offset = sensor.getAngle();
+  //}
+  
   motor.loopFOC();
 
   updateDetent();
 
-  if (prev_position != current_position) {
+  if (initialized && prev_position != current_position) {
     prev_position = current_position;
     if (onPositionChanged != nullptr) {
       onPositionChanged(current_position);
     }
   }
 
-  if (prev_shaft_angle != sensor.getAngle()) {
+  if (initialized && prev_shaft_angle != sensor.getAngle()) {
     prev_shaft_angle = sensor.getAngle();
     if (onAngleChanged != nullptr) {
       onAngleChanged(sensor.getAngle() - angle_offset);
     }
   }
+
+  //Serial.println(current_position);
 
   //Serial.print(sensor.getAngle());
   //Serial.print("\t");
